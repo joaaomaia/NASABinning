@@ -1,0 +1,63 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches
+.cache/
+.ipynb_checkpoints/
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+*.log
+
+# Jupyter Notebook Checkpoints
+**/.ipynb_checkpoints
+
+# MacOS
+.DS_Store
+
+# Environments
+.env
+*.env
+
+# Exported files
+*.xlsx
+*.csv
+*.parquet
+*.pkl
+*.json
+
+# Images (exclui apenas subpasta olds dentro de img/)
+img/olds/
+
+# Arquivos temporários
+*.bak
+*.tmp
+~$*
+
+# Testes e relatórios
+htmlcov/
+coverage.xml
+pytest_cache/
+.tox/
+.nox/
+
+# Modelos e artefatos
+models/
+outputs/
+runs/
