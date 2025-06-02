@@ -1,0 +1,7 @@
+pandas>=2.0
+numpy>=1.26
+scikit-learn>=1.5      # BaseEstimator / KBinsDiscretizer
+optbinning>=0.18.0     # Supervised optimal binning
+optuna>=3.6            # Optional optimisation
+matplotlib>=3.9
+seaborn>=0.13
