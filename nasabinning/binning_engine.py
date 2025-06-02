@@ -13,6 +13,9 @@ from .strategies import get_strategy  # factory function (ver abaixo)
 from .refinement import refine_bins   # ainda será implementado
 from .metrics import iv               # placeholder
 
+from .temporal_stability import event_rate_by_time
+from .visualizations import plot_event_rate_stability
+
 class NASABinner(BaseEstimator, TransformerMixin):
     """Binner compatível com scikit-learn."""
 
@@ -52,10 +55,16 @@ class NASABinner(BaseEstimator, TransformerMixin):
             time_col=time_col,
             check_stability=self.check_stability,
         )
+
+        # calcula pivot de estabilidade temporal apenas depois do refinamento
+        if time_col:
+            self._pivot_ = event_rate_by_time(self._bin_summary_, time_col)
+
         # Calcula IV como exemplo de métrica armazenada
         self.iv_ = iv(self._bin_summary_)
 
         return self
+
 
     # ------------------------------------------------------------------ #
     def transform(self, X: pd.DataFrame, *, return_woe: bool = False):
@@ -73,3 +82,9 @@ class NASABinner(BaseEstimator, TransformerMixin):
     def bin_summary_(self):
         """Retorna DataFrame com cortes, event-rate, WoE, IV."""
         return self._bin_summary_
+
+    # ------------------------------------------------------------------ #
+    def plot_event_rate_stability(self, **plot_kwargs):
+        if not hasattr(self, "_pivot_"):
+            raise ValueError("Fit the model with a time_col first.")
+        return plot_event_rate_stability(self._pivot_, **plot_kwargs)

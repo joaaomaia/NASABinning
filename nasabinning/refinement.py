@@ -44,9 +44,9 @@ def refine_bins(bin_tbl: pd.DataFrame,
     # ---- 2. (opcional) checar estabilidade temporal ---------------
     if check_stability and time_col is not None:
         # PSI entre primeira e última safra como heurística simples
-        from .metrics import psi
-        instability = psi(tbl, by=time_col)
+        from .temporal_stability import event_rate_by_time, psi_over_time
+        pivot = event_rate_by_time(tbl, time_col)
         # Usuário decidirá depois o que fazer com esse valor
-        tbl.attrs["psi_over_time"] = instability
+        tbl.attrs["psi_over_time"] = psi_over_time(pivot)
 
     return tbl
