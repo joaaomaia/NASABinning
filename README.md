@@ -4,7 +4,8 @@
   <img src="./imgs/social_preview.png" alt="NASABinning Banner" width="600"/>
 </p>
 
-### O **NASABinning** é uma biblioteca desenvolvida para facilitar o processo de _binning_ (agrupamento de variáveis numéricas e categóricas).
+**NASABinning**
+biblioteca desenvolvida para facilitar o processo de agrupamento de variáveis numéricas e categóricas.
 
 ## Principais recursos
 
