@@ -43,7 +43,7 @@ venv/
 *.json
 
 # Images (exclui apenas subpasta olds dentro de img/)
-img/olds/
+imgs/olds/
 
 # Arquivos temporários
 *.bak

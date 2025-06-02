@@ -1,7 +1,7 @@
 # 🚀 NASABinning
 
 <p align="center">
-  <img src="./img/logotipo.png" alt="NASABinning Banner" width="600"/>
+  <img src="./imgs/logotipo.png" alt="NASABinning Banner" width="600"/>
 </p>
 
 ### Um sistema de binning poderoso, transparente e auditável – digno de missão espacial. 🌌
