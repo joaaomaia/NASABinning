@@ -1,0 +1,1 @@
+#rodar várias combinações e guardar métricas/plots para auditoria lado a lado.

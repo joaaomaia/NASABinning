@@ -1,0 +1,1 @@
+# geração de DataFrames/plots e exportação (Excel, JSON)

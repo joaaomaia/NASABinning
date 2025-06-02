@@ -1,0 +1,1 @@
+#equal-width, equal-freq, k-means, KBinsDiscretizer

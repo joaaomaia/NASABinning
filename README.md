@@ -16,7 +16,7 @@ O **NASABinning** é uma biblioteca desenvolvida para facilitar o processo de _b
 
 ---
 
-## 📦 Instalação
+## 📦 Instalação (em breve)
 
 ```bash
 pip install nasabinning
