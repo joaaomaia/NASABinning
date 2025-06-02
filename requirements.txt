@@ -5,3 +5,7 @@ optbinning>=0.18.0     # Supervised optimal binning
 optuna>=3.6            # Optional optimisation
 matplotlib>=3.9
 seaborn>=0.13
+
+# Dev / testes (opcional)
+pytest>=8.2
+ruff>=0.4
