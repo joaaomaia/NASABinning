@@ -19,8 +19,7 @@ Desenvolvido para facilitar a decisão de agrupamento de variáveis numéricas e
 | **Relatórios auditáveis** | Geração de tabelas e gráficos em `.xlsx`, `.json` e Matplotlib para `WoE`, event-rate e estabilidade. |
 
 
-
-> ⚠️ Ideal para cientistas de dados que atuam com modelagem de risco de crédito, `scorecards` e precisam entregar resultados robustos e rastreáveis para auditorias ou produção.
+> ⚠️ Ideal para cientistas de dados que atuam com modelagem de `risco de crédito`, `scorecards` e precisam entregar resultados robustos e rastreáveis para auditorias ou produção.
 
 ---
 
