@@ -30,4 +30,5 @@ biblioteca desenvolvida para facilitar o processo de agrupamento de variáveis n
 ## 📦 Instalação (em breve)
 
 ```bash
-pip install nasabinning
+# futura distribuição PyPI
+pip install nasabinning 
