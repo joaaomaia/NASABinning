@@ -4,9 +4,7 @@
   <img src="./imgs/logotipo.png" alt="NASABinning Banner" width="600"/>
 </p>
 
-### Um sistema de binning poderoso, transparente e auditável – digno de missão espacial. 🌌
-
-O **NASABinning** é uma biblioteca desenvolvida para facilitar o processo de _binning_ (agrupamento de variáveis numéricas e categóricas), com foco em:
+### O **NASABinning** é uma biblioteca desenvolvida para facilitar o processo de _binning_ (agrupamento de variáveis numéricas e categóricas).
 
 ## Principais recursos
 
