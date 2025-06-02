@@ -52,6 +52,7 @@ class NASABinner(BaseEstimator, TransformerMixin):
         self._bin_summary_ = refine_bins(
             self._fitted_strategy.bin_summary_,
             min_er_delta=self.min_event_rate_diff,
+            trend=self.monotonic,
             time_col=time_col,
             check_stability=self.check_stability,
         )
