@@ -4,8 +4,7 @@
   <img src="./imgs/social_preview.png" alt="NASABinning Banner" width="600"/>
 </p>
 
-**NASABinning**
-Biblioteca desenvolvida para facilitar o processo de agrupamento de variáveis numéricas e categóricas.
+Desenvolvido para facilitar a decisão de agrupamento de variáveis numéricas e categóricas.
 
 ## Principais recursos
 
