@@ -1,7 +1,7 @@
 # 🚀 NASABinning
 
 <p align="center">
-  <img src="./imgs/logotipo.png" alt="NASABinning Banner" width="600"/>
+  <img src="./imgs/social_preview.png" alt="NASABinning Banner" width="600"/>
 </p>
 
 ### O **NASABinning** é uma biblioteca desenvolvida para facilitar o processo de _binning_ (agrupamento de variáveis numéricas e categóricas).
