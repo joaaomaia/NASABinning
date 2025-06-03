@@ -1,4 +1,4 @@
-# binning_engine.py
+# 
 """
 binning_engine.py
 Orquestra a escolha de estratégia (supervised / unsupervised),
@@ -15,6 +15,7 @@ from .metrics import iv               # placeholder
 
 from .temporal_stability import event_rate_by_time
 from .visualizations import plot_event_rate_stability
+
 
 class NASABinner(BaseEstimator, TransformerMixin):
     """Binner compatível com scikit-learn."""
@@ -40,48 +41,78 @@ class NASABinner(BaseEstimator, TransformerMixin):
         self._bin_summary_ = None
 
     # ------------------------------------------------------------------ #
-    def fit(self, X: pd.DataFrame, y: pd.Series, *, time_col: str = None):
-        """Treina o binner nos dados."""
+    def fit(self, X: pd.DataFrame, y: pd.Series, *, time_col: str | None = None):
+        """Treina o binner.  Se use_optuna=True, otimiza coluna-a-coluna."""
+        # ---------- validações -------------------------------------------
         assert isinstance(X, pd.DataFrame), "X deve ser um DataFrame"
-        assert isinstance(y, pd.Series), "y deve ser uma Series"
+        assert isinstance(y, pd.Series),   "y deve ser uma Series"
 
         X = X.copy()
 
-        # -------------------------------------------------- #
-        # se optuna estiver ligado, delega a otimização
+        # ==================================================================
+        # 1. OPTUNA → um estudo por variável
+        # ==================================================================
         if self.use_optuna:
             from .optuna_optimizer import optimize_bins
-            best_params, opt_binner = optimize_bins(
-                X, y,
-                time_col=time_col,
-                n_trials=self.strategy_kwargs.pop("n_trials", 20),
+            
+            self._per_feature_binners: dict[str, NASABinner] = {}
+            self.best_params_: dict[str, dict] = {}
+            summaries = []
+
+            n_trials = self.strategy_kwargs.pop("n_trials", 20)
+
+            base_kwargs = dict(
                 strategy=self.strategy,
                 min_event_rate_diff=self.min_event_rate_diff,
                 monotonic=self.monotonic,
                 check_stability=self.check_stability,
             )
-            # clona atributos do melhor
-            self.__dict__.update(opt_binner.__dict__)
-            
-            #Guardar melhor os hiperparâmetros otimizados
-            self.best_params_ = best_params
+
+            for col in X.columns:
+                best, binner_col = optimize_bins(
+                    X[[col]],                # otimiza só essa coluna
+                    y,
+                    time_col=time_col,
+                    n_trials=n_trials,
+                    **base_kwargs,
+                )
+                self._per_feature_binners[col] = binner_col
+                self.best_params_[col] = best
+                summaries.append(binner_col._bin_summary_)
+
+            # Tabela única com todos os bins
+            self._bin_summary_ = pd.concat(summaries, ignore_index=True)
+
+            # IV por coluna e total
+            self.iv_dict_ = {c: b.iv_ for c, b in self._per_feature_binners.items()}
+            self.iv_ = sum(self.iv_dict_.values())
+
+            # Pivot global opcional
+            if time_col and time_col in self._bin_summary_.columns:
+                from .temporal_stability import event_rate_by_time
+                self._pivot_ = event_rate_by_time(self._bin_summary_, time_col)
+            else:
+                self._pivot_ = None
+
+            # não existe _fitted_strategy global nesse modo
+            self._fitted_strategy = None
             return self
 
-        # ------------------------------------------------------------------ #
-        # Elimina eventual aninhamento "strategy_kwargs": { ... }
+        # ==================================================================
+        # 2. Fluxo tradicional (sem Optuna)
+        # ==================================================================
+
+        # Achata eventual aninhamento strategy_kwargs
         if "strategy_kwargs" in self.strategy_kwargs:
             nested = self.strategy_kwargs.pop("strategy_kwargs")
-            # dê prioridade aos pares já existentes (não sobrescreve)
             for k, v in nested.items():
+                # mantém valor existente se já definido externamente
                 self.strategy_kwargs.setdefault(k, v)
-        # -------------------------------------------------- #
 
-        self._fitted_strategy = get_strategy(
-            self.strategy, **self.strategy_kwargs
-        )
+        self._fitted_strategy = get_strategy(self.strategy, **self.strategy_kwargs)
         self._fitted_strategy.fit(X, y, monotonic_trend=self.monotonic)
 
-        # aplica refinamentos (delta event-rate, estabilidade, etc.)
+        from .refinement import refine_bins
         self._bin_summary_ = refine_bins(
             self._fitted_strategy.bin_summary_,
             min_er_delta=self.min_event_rate_diff,
@@ -90,13 +121,15 @@ class NASABinner(BaseEstimator, TransformerMixin):
             check_stability=self.check_stability,
         )
 
-        # calcula pivot de estabilidade temporal **apenas se a coluna realmente existir**
+        # Pivot global (se aplicável)
         if time_col and time_col in self._bin_summary_.columns:
+            from .temporal_stability import event_rate_by_time
             self._pivot_ = event_rate_by_time(self._bin_summary_, time_col)
         else:
             self._pivot_ = None
 
-        # Calcula IV como exemplo de métrica armazenada
+        # IV único
+        from .metrics import iv
         self.iv_ = iv(self._bin_summary_)
 
         return self
