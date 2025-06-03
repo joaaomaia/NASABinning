@@ -106,7 +106,7 @@ def plot_event_rate_stability(
     label_mapper=None,
     title_prefix: str | None = "Estabilidade temporal",
     time_col_label: str | None = None,
-    figsize=(12, 4),
+    figsize=(14, 6),
 ):
     if label_mapper is None:
         label_mapper = lambda var: binner._bin_code_to_label(var)

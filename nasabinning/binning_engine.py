@@ -4,7 +4,7 @@ binning_engine.py
 Orquestra a escolha de estratégia (supervised / unsupervised),
 aplica refinamentos e expõe interface scikit-learn-compatível.
 """
-from typing import Optional
+from typing import List, Optional, Dict
 import pandas as pd
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
@@ -19,23 +19,22 @@ import woodwork as ww
 
 
 class NASABinner(BaseEstimator, TransformerMixin):
-    """Binner compatível com scikit-learn."""
-
     def __init__(
         self,
         strategy: str = "supervised",
-        # parâmetros comuns
+        # hiper-parâmetros globais
+        max_bins: int = 6,                       #  ←  NOVO
         min_event_rate_diff: float = 0.02,
-        monotonic: Optional[str] = None,  # "ascending", "descending" ou None
+        monotonic: str | None = None,
         check_stability: bool = False,
         use_optuna: bool = False,
-        time_col=None,
-        force_categorical=None,
-        force_numeric=None,
-        **strategy_kwargs,
+        time_col: str | None = None,
+        force_categorical: list[str] | None = None,
+        force_numeric: list[str] | None = None,
+        strategy_kwargs: dict | None = None,
     ):
         self.strategy = strategy
-        self.strategy_kwargs = strategy_kwargs
+        self.max_bins = max_bins                #  ←  guarda
         self.min_event_rate_diff = min_event_rate_diff
         self.monotonic = monotonic
         self.check_stability = check_stability
@@ -43,25 +42,33 @@ class NASABinner(BaseEstimator, TransformerMixin):
         self.time_col = time_col
         self.force_categorical = force_categorical or []
         self.force_numeric = force_numeric or []
+
+        # ——— normaliza strategy_kwargs ———
+        strategy_kwargs = strategy_kwargs or {}
+        if "strategy_kwargs" in strategy_kwargs:
+            nested = strategy_kwargs.pop("strategy_kwargs")
+            for k, v in nested.items():
+                strategy_kwargs.setdefault(k, v)
+
+        # garante que max_bins chegue à strategy caso ela use
+        strategy_kwargs.setdefault("max_bins", self.max_bins)
+        self.strategy_kwargs = strategy_kwargs
+
         # internos
         self._fitted_strategy = None
         self._bin_summary_ = None
-        
 
-    def _apply_overrides(self, ww_table):
-        """
-        Aplica tags manuais sobre o esquema Woodwork antes do binning.
-        """
-        force_cat = self.force_categorical or []
-        force_num = self.force_numeric or []
 
-        for col in force_cat:
-            if col in ww_table.columns:
-                ww_table.ww.set_semantic_tags(col, {"category"})
-        for col in force_num:
-            if col in ww_table.columns:
-                ww_table.ww.set_semantic_tags(col, {"numeric"})
-        return ww_table
+    def _apply_overrides(self, df_ww):
+        """Força tags conforme usuário."""
+        for col in self.force_categorical:
+            if col in df_ww.columns:
+                df_ww.ww.set_semantic_tags(col, {"category"})
+        for col in self.force_numeric:
+            if col in df_ww.columns:
+                df_ww.ww.set_semantic_tags(col, {"numeric"})
+        return df_ww
+
 
     # ------------------------------------------------------------------ #
     def fit(
@@ -76,22 +83,27 @@ class NASABinner(BaseEstimator, TransformerMixin):
         assert isinstance(X, pd.DataFrame), "X deve ser um DataFrame"
         assert isinstance(y, pd.Series),   "y deve ser uma Series"
 
+        # --------- time_col definido? (opcional) --------------------------
         time_col = time_col or self.time_col
         self.time_col = time_col  # garante que será armazenado mesmo que só apareça agora
 
+        # --------- Woodwork: inferência e overrides -----------------------
+        ww_df = X.copy()
+        ww_df.ww.init()                     # cria schema padrão
+        ww_df = self._apply_overrides(ww_df)
+        self.schema_ = ww_df.ww.schema      # salva para debug
 
-        import woodwork as ww
-        ww_table = ww.DataTable.from_pandas(X)
-        ww_table = self._apply_overrides(ww_table)
-        self.schema_ = ww_table.schema
+        # listas de colunas
+        num_cols = [
+            c for c in ww_df.columns if "numeric" in ww_df.ww.logical_types[c].standard_tags
+        ]
+        cat_cols = [
+            c for c in ww_df.columns if "category" in ww_df.ww.logical_types[c].standard_tags
+        ]
+        self._ignored_cols = [c for c in ww_df.columns if c not in num_cols + cat_cols]
 
-        # separa por tipo
-        num_cols = [c for c in ww_table.columns if 'numeric' in ww_table[c].semantic_tags]
-        cat_cols = [c for c in ww_table.columns if 'category' in ww_table[c].semantic_tags]
-        ignored_cols = [c for c in ww_table.columns if c not in num_cols + cat_cols]
-        self._ignored_cols = ignored_cols
+        X = ww_df                             # segue como DataFrame pandas+ww
 
-        X = ww_table.to_pandas()  # continua como DataFrame tradicional
 
 
         # ==================================================================
@@ -99,13 +111,10 @@ class NASABinner(BaseEstimator, TransformerMixin):
         # ==================================================================
         if self.use_optuna:
             from .optuna_optimizer import optimize_bins
-            
-            self._per_feature_binners: dict[str, NASABinner] = {}
-            self.best_params_: dict[str, dict] = {}
-            summaries = []
+            self._per_feature_binners = {}
+            summaries, self.best_params_, self.iv_dict_ = [], {}, {}
 
             n_trials = self.strategy_kwargs.pop("n_trials", 20)
-
             base_kwargs = dict(
                 strategy=self.strategy,
                 min_event_rate_diff=self.min_event_rate_diff,
@@ -113,33 +122,24 @@ class NASABinner(BaseEstimator, TransformerMixin):
                 check_stability=self.check_stability,
             )
 
-            for col in X.columns:
-                best, binner_col = optimize_bins(
-                    X[[col]],                # otimiza só essa coluna
-                    y,
-                    time_col=time_col,
-                    n_trials=n_trials,
-                    **base_kwargs,
+            for col in num_cols + cat_cols:
+                best, b_col = optimize_bins(
+                    X[[col]], y, time_col=time_col, n_trials=n_trials, **base_kwargs
                 )
-                self._per_feature_binners[col] = binner_col
+                self._per_feature_binners[col] = b_col
                 self.best_params_[col] = best
-                summaries.append(binner_col._bin_summary_)
+                self.iv_dict_[col] = b_col.iv_
+                summaries.append(b_col._bin_summary_)
 
-            # Tabela única com todos os bins
             self._bin_summary_ = pd.concat(summaries, ignore_index=True)
-
-            # IV por coluna e total
-            self.iv_dict_ = {c: b.iv_ for c, b in self._per_feature_binners.items()}
             self.iv_ = sum(self.iv_dict_.values())
 
-            # Pivot global opcional
             if time_col and time_col in self._bin_summary_.columns:
                 from .temporal_stability import event_rate_by_time
                 self._pivot_ = event_rate_by_time(self._bin_summary_, time_col)
             else:
                 self._pivot_ = None
 
-            # não existe _fitted_strategy global nesse modo
             self._fitted_strategy = None
             return self
 

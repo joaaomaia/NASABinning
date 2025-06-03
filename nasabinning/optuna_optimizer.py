@@ -55,6 +55,10 @@ def _objective(
     psi = binner._bin_summary_.attrs.get("psi_over_time", 0.0) or 0.0
     n_bins = len(binner._bin_summary_)
 
+    if n_bins < 2:
+        # penalização forte / descarta trial
+        return 1e6
+
     cost = -(iv) + 0.5 * psi + 0.01 * n_bins
 
     # salva valores para análise posterior
