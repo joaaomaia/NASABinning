@@ -1,0 +1,1 @@
+adicionar restrição de quantidade mínima de binnings ao final de otimização com optuna

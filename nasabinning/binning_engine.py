@@ -15,6 +15,7 @@ from .metrics import iv               # placeholder
 
 from .temporal_stability import event_rate_by_time
 from .visualizations import plot_event_rate_stability
+import woodwork as ww
 
 
 class NASABinner(BaseEstimator, TransformerMixin):
@@ -28,6 +29,9 @@ class NASABinner(BaseEstimator, TransformerMixin):
         monotonic: Optional[str] = None,  # "ascending", "descending" ou None
         check_stability: bool = False,
         use_optuna: bool = False,
+        time_col=None,
+        force_categorical=None,
+        force_numeric=None,
         **strategy_kwargs,
     ):
         self.strategy = strategy
@@ -36,18 +40,59 @@ class NASABinner(BaseEstimator, TransformerMixin):
         self.monotonic = monotonic
         self.check_stability = check_stability
         self.use_optuna = use_optuna
+        self.time_col = time_col
+        self.force_categorical = force_categorical or []
+        self.force_numeric = force_numeric or []
         # internos
         self._fitted_strategy = None
         self._bin_summary_ = None
+        
+
+    def _apply_overrides(self, ww_table):
+        """
+        Aplica tags manuais sobre o esquema Woodwork antes do binning.
+        """
+        force_cat = self.force_categorical or []
+        force_num = self.force_numeric or []
+
+        for col in force_cat:
+            if col in ww_table.columns:
+                ww_table.ww.set_semantic_tags(col, {"category"})
+        for col in force_num:
+            if col in ww_table.columns:
+                ww_table.ww.set_semantic_tags(col, {"numeric"})
+        return ww_table
 
     # ------------------------------------------------------------------ #
-    def fit(self, X: pd.DataFrame, y: pd.Series, *, time_col: str | None = None):
+    def fit(
+            self,
+            X: pd.DataFrame,
+            y: pd.Series,
+            *,
+            time_col: str | None = None
+            ):
         """Treina o binner.  Se use_optuna=True, otimiza coluna-a-coluna."""
         # ---------- validações -------------------------------------------
         assert isinstance(X, pd.DataFrame), "X deve ser um DataFrame"
         assert isinstance(y, pd.Series),   "y deve ser uma Series"
 
-        X = X.copy()
+        time_col = time_col or self.time_col
+        self.time_col = time_col  # garante que será armazenado mesmo que só apareça agora
+
+
+        import woodwork as ww
+        ww_table = ww.DataTable.from_pandas(X)
+        ww_table = self._apply_overrides(ww_table)
+        self.schema_ = ww_table.schema
+
+        # separa por tipo
+        num_cols = [c for c in ww_table.columns if 'numeric' in ww_table[c].semantic_tags]
+        cat_cols = [c for c in ww_table.columns if 'category' in ww_table[c].semantic_tags]
+        ignored_cols = [c for c in ww_table.columns if c not in num_cols + cat_cols]
+        self._ignored_cols = ignored_cols
+
+        X = ww_table.to_pandas()  # continua como DataFrame tradicional
+
 
         # ==================================================================
         # 1. OPTUNA → um estudo por variável
