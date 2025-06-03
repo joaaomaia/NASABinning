@@ -160,33 +160,49 @@ class NASABinner(BaseEstimator, TransformerMixin):
         )
         return pivot
 
-    # ------------------------------------------------------------------ #
-    def plot_event_rate_stability(self, pivot=None, *, title=None, **plot_kwargs):
+    def _bin_code_to_label(self, var: str) -> dict[int, str]:
         """
-        Gera gráfico de event-rate por bin ao longo das safras.
+        Constrói dicionário {codigo_int -> label_intervalo} para a variável `var`,
+        baseado em self._bin_summary_ já refinado.
+        """
+        bs = self._bin_summary_.loc[self._bin_summary_["variable"] == var]
+        # assume ordem dos bins na tabela = código 0..n-1
+        return {i: str(lbl) for i, lbl in enumerate(bs["bin"].tolist())}
 
-        Parâmetros
+
+    # ------------------------------------------------------------------ #
+    def plot_event_rate_stability(
+        self,
+        pivot=None,
+        *,
+        title_prefix=None,
+        time_col_label: str | None = None,
+    ):
+        """
+        Gera gráfico(s) de estabilidade temporal.
+
+        Parameters
         ----------
         pivot : pd.DataFrame | None
-            DataFrame pivotado, tal como retornado por stability_over_time.
-            Se None, tenta usar self._pivot_.
-        title : str | None
-            Título opcional para o gráfico.
-        **plot_kwargs : dict
-            Argumentos extras repassados ao visualizador.
-
-        Retorna
-        -------
-        (fig, ax) : Matplotlib Figure e Axes
+            Se None, usa self._pivot_ (quando houver).
+        title_prefix : str | None
+            Prefixo para o título de cada figura.
+        time_col_label : str | None
+            Texto a ser usado no eixo-X (ex.: "AnoMesReferencia").
         """
         from .visualizations import plot_event_rate_stability as _plot
 
         if pivot is None:
-            if getattr(self, "_pivot_", None) is None:
+            pivot = getattr(self, "_pivot_", None)
+            if pivot is None:
                 raise ValueError(
                     "Nenhum pivot encontrado. "
                     "Passe um pivot explícito ou chame stability_over_time primeiro."
                 )
-            pivot = self._pivot_
 
-        return _plot(pivot, title=title, **plot_kwargs)
+        return _plot(
+            pivot,
+            label_mapper=self._bin_code_to_label,
+            title_prefix=title_prefix,
+            time_col_label=time_col_label,
+        )
