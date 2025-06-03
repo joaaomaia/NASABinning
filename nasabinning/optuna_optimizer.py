@@ -5,59 +5,85 @@ Busca hiperparâmetros ótimos para NASABinner via Optuna.
 Função principal
 ----------------
 optimize_bins(X, y, time_col=None, n_trials=20, **base_kwargs)
-→ dict(best_params) , NASABinner fitted
+→ (best_params: dict, fitted_binner: NASABinner)
 """
-
 from __future__ import annotations
+
+from typing import Any, Tuple
+
 import optuna
 import pandas as pd
-from typing import Tuple, Any
+
 from .binning_engine import NASABinner
 
-# ------------------------------------------------------------------ #
-def _objective(trial: optuna.Trial,
-               X: pd.DataFrame,
-               y: pd.Series,
-               base_kwargs: dict[str, Any],
-               time_col: str | None):
 
+# --------------------------------------------------------------------------- #
+def _objective(
+    trial: optuna.Trial,
+    X: pd.DataFrame,
+    y: pd.Series,
+    base_kwargs: dict[str, Any],
+    time_col: str | None,
+) -> float:
+    """Função objetivo usada pelo Optuna."""
     params = {
         "max_bins": trial.suggest_int("max_bins", 3, 10),
         "min_bin_size": trial.suggest_float("min_bin_size", 0.01, 0.1),
-        "min_event_rate_diff": trial.suggest_float("min_event_rate_diff", 0.01, 0.1),
+        "min_event_rate_diff": trial.suggest_float(
+            "min_event_rate_diff", 0.01, 0.1
+        ),
     }
 
-    # cria binner com params sugeridos
+    # ------------------------------------------------------------------ #
+    # remove possíveis chaves conflitantes antes de repassar
+    cfg = dict(base_kwargs)
+    cfg.pop("min_event_rate_diff", None)
+    cfg.pop("strategy_kwargs", None)
+
+    # cria NASABinner candidato
     binner = NASABinner(
-        **base_kwargs,
+        **cfg,
         max_bins=params["max_bins"],
         min_event_rate_diff=params["min_event_rate_diff"],
         strategy_kwargs=dict(min_bin_size=params["min_bin_size"]),
-        use_optuna=False,          # evita recursão
+        use_optuna=False,  # evita recursão
     )
     binner.fit(X, y, time_col=time_col)
 
-    # métrica  ->   queremos IV alto  /  PSI baixo / nº bins baixo
+    # métrica composta que queremos MINIMIZAR
     iv = binner.iv_
     psi = binner._bin_summary_.attrs.get("psi_over_time", 0.0) or 0.0
     n_bins = len(binner._bin_summary_)
 
-    # função de custo (minimizar)
     cost = -(iv) + 0.5 * psi + 0.01 * n_bins
+
+    # salva valores para análise posterior
     trial.set_user_attr("iv", iv)
     trial.set_user_attr("psi", psi)
     trial.set_user_attr("n_bins", n_bins)
+
     return cost
 
 
-# ------------------------------------------------------------------ #
-def optimize_bins(X: pd.DataFrame,
-                  y: pd.Series,
-                  *,
-                  time_col: str | None = None,
-                  n_trials: int = 20,
-                  **base_kwargs) -> Tuple[dict[str, Any], NASABinner]:
+# --------------------------------------------------------------------------- #
+def optimize_bins(
+    X: pd.DataFrame,
+    y: pd.Series,
+    *,
+    time_col: str | None = None,
+    n_trials: int = 20,
+    **base_kwargs,
+) -> Tuple[dict[str, Any], NASABinner]:
+    """
+    Executa Optuna para achar hiperparâmetros ideais.
 
+    Retorna
+    -------
+    best_params : dict
+        {'max_bins', 'min_bin_size', 'min_event_rate_diff'}
+    fitted_binner : NASABinner
+        Binner treinado com os melhores hiperparâmetros.
+    """
     study = optuna.create_study(direction="minimize")
     study.optimize(
         lambda tr: _objective(tr, X, y, base_kwargs, time_col),
@@ -72,13 +98,21 @@ def optimize_bins(X: pd.DataFrame,
         "min_event_rate_diff": best.params["min_event_rate_diff"],
     }
 
-    # treina binner final com melhores params
+    # ------------------------------------------------------------------ #
+    # treina binner final com melhores parâmetros
+    cfg = dict(base_kwargs)
+    cfg.pop("min_event_rate_diff", None)
+    cfg.pop("strategy_kwargs", None)
+
     final_binner = NASABinner(
-        **base_kwargs,
+        **cfg,
         max_bins=best_params["max_bins"],
         min_event_rate_diff=best_params["min_event_rate_diff"],
         strategy_kwargs=dict(min_bin_size=best_params["min_bin_size"]),
         use_optuna=False,
     ).fit(X, y, time_col=time_col)
+
+    # expõe best_params ao objeto para debug externo se desejado
+    final_binner.best_params_ = best_params
 
     return best_params, final_binner

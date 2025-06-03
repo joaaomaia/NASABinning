@@ -66,6 +66,14 @@ class NASABinner(BaseEstimator, TransformerMixin):
             #Guardar melhor os hiperparâmetros otimizados
             self.best_params_ = best_params
             return self
+
+        # ------------------------------------------------------------------ #
+        # Elimina eventual aninhamento "strategy_kwargs": { ... }
+        if "strategy_kwargs" in self.strategy_kwargs:
+            nested = self.strategy_kwargs.pop("strategy_kwargs")
+            # dê prioridade aos pares já existentes (não sobrescreve)
+            for k, v in nested.items():
+                self.strategy_kwargs.setdefault(k, v)
         # -------------------------------------------------- #
 
         self._fitted_strategy = get_strategy(
