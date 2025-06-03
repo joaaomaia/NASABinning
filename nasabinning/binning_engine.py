@@ -153,28 +153,55 @@ class NASABinner(BaseEstimator, TransformerMixin):
         return self._bin_summary_
 
     # -------------------------------------------------- #
-    def stability_over_time(self, X: pd.DataFrame, y, time_col: str):
+    # ------------------------------------------------------------------ #
+    def stability_over_time(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        *,
+        time_col: str,
+    ) -> pd.DataFrame:
         """
-        Calcula event-rate por bin ao longo das safras e devolve DataFrame pivotado.
-        Necessita que 'time_col' exista em X.
-        """
+        Calcula event-rate por bin ao longo das safras.
 
+        Retorna um DataFrame pivotado:
+            index   → (variable, bin_code_int)
+            columns → valores únicos de `time_col` (yyyymm)
+            values  → event_rate (0-1)
+        """
+        
         if time_col not in X.columns:
             raise KeyError(
                 f"time_col='{time_col}' não está em X. "
-                "Inclua a coluna de safra no DataFrame passado a stability_over_time."
+                "Inclua a coluna de safra no DataFrame passado."
             )
+        # -------------------------------------------------------------- #
+        # 1) Gera DataFrame com códigos de bin para cada variável
+        # -------------------------------------------------------------- #
+        if getattr(self, "_fitted_strategy", None) is not None:
+            # modo tradicional (um único strategy)
+            X_bins = self._fitted_strategy.transform(X.drop(columns=[time_col], errors="ignore"))
+        elif hasattr(self, "_per_feature_binners"):
+            # modo Optuna por feature
+            parts = []
+            for col, binner_col in self._per_feature_binners.items():
+                code = binner_col._fitted_strategy.transform(X[[col]]).rename(columns={col: col})
+                parts.append(code)
+            X_bins = pd.concat(parts, axis=1)
+        else:
+            raise RuntimeError("Binner ainda não foi treinado.  Chame .fit() antes.")
 
-        # if self._fitted_strategy is None:
-        #     raise RuntimeError("Fit the binner first.")
+        # -------------------------------------------------------------- #
+        # 2) Concatena target e safra
+        # -------------------------------------------------------------- #
+        df_aux = pd.concat(
+            [X_bins, y.rename("target"), X[time_col]],
+            axis=1,
+        )
 
-        # aplica cortes (ordinal) em todas as variáveis
-        X_bins = self._fitted_strategy.transform(X)
-
-        # junta target e safra
-        df_aux = pd.concat([X_bins, y.rename("target"), X[time_col]], axis=1)
-
-        # para cada variável, cada bin e cada safra → event-rate
+        # -------------------------------------------------------------- #
+        # 3) Calcula event-rate por (var, bin, safra)
+        # -------------------------------------------------------------- #
         out = []
         for var in X_bins.columns:
             grp = (
@@ -189,17 +216,21 @@ class NASABinner(BaseEstimator, TransformerMixin):
 
         df_rate = pd.concat(out, ignore_index=True)
 
+        # -------------------------------------------------------------- #
+        # 4) Pivot final (index = (variable, bin), columns = safra)
+        # -------------------------------------------------------------- #
         pivot = (
             df_rate.pivot_table(
                 index=["variable", "bin"],
                 columns=time_col,
                 values="event_rate",
-                fill_value=0
+                fill_value=0,
             )
             .sort_index(axis=1)
             .sort_index()
         )
         return pivot
+
 
     def _bin_code_to_label(self, var: str) -> dict:
         """
