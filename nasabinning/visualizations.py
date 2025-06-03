@@ -5,25 +5,37 @@ Usa Matplotlib (sem cores explícitas, conforme guidelines).
 """
 
 import matplotlib.pyplot as plt
-import pandas as pd
+import seaborn as sns
 
-# ------------------------------------------------------------------ #
-def plot_event_rate_stability(pivot: pd.DataFrame, *, title=None):
+def plot_event_rate_stability(pivot, *, title=None):
     """
-    Desenha uma linha por bin mostrando a evolução do event-rate ao longo
-    das safras. Entrada = DataFrame pivotado (mesmo formato do módulo
-    temporal_stability).
+    Desenha linhas de event-rate por bin usando Seaborn.
     """
-    fig, ax = plt.subplots(figsize=(8, 4))
-    for (var, b), row in pivot.iterrows():
-        ax.plot(pivot.columns, row.values, label=f"{var} | bin {b}")
-    ax.set_xlabel("Safra")
-    ax.set_ylabel("Event Rate")
+    if pivot is None or pivot.empty:
+        raise ValueError("pivot vazio – calcule stability_over_time antes.")
+
+    df_long = (
+        pivot.reset_index()
+        .melt(id_vars=["variable", "bin"], var_name="safra", value_name="event_rate")
+    )
+
+    plt.figure(figsize=(8, 4))
+    sns.lineplot(
+        data=df_long,
+        x="safra",
+        y="event_rate",
+        hue="variable",
+        style="bin",
+        markers=False,
+        dashes=True,
+        linewidth=1
+    )
+    plt.xlabel("Safra")
+    plt.ylabel("Event Rate")
     if title:
-        ax.set_title(title)
-    ax.grid(alpha=0.4, linestyle="--")
-    # mostra apenas as quatro primeiras legendas para não poluir
-    handles, labels = ax.get_legend_handles_labels()
-    if len(labels) <= 4:
-        ax.legend(fontsize=8, frameon=False)
-    return fig, ax
+        plt.title(title)
+    plt.grid(True, linestyle="--", alpha=0.4)
+    plt.legend(fontsize=8, frameon=False)
+    plt.tight_layout()
+    return plt.gcf(), plt.gca()
+

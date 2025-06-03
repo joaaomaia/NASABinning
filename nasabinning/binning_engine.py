@@ -82,9 +82,11 @@ class NASABinner(BaseEstimator, TransformerMixin):
             check_stability=self.check_stability,
         )
 
-        # calcula pivot de estabilidade temporal apenas depois do refinamento
-        if time_col:
+        # calcula pivot de estabilidade temporal **apenas se a coluna realmente existir**
+        if time_col and time_col in self._bin_summary_.columns:
             self._pivot_ = event_rate_by_time(self._bin_summary_, time_col)
+        else:
+            self._pivot_ = None
 
         # Calcula IV como exemplo de métrica armazenada
         self.iv_ = iv(self._bin_summary_)
@@ -109,8 +111,82 @@ class NASABinner(BaseEstimator, TransformerMixin):
         """Retorna DataFrame com cortes, event-rate, WoE, IV."""
         return self._bin_summary_
 
+    # -------------------------------------------------- #
+    def stability_over_time(self, X: pd.DataFrame, y, time_col: str):
+        """
+        Calcula event-rate por bin ao longo das safras e devolve DataFrame pivotado.
+        Necessita que 'time_col' exista em X.
+        """
+
+        if time_col not in X.columns:
+            raise KeyError(
+                f"time_col='{time_col}' não está em X. "
+                "Inclua a coluna de safra no DataFrame passado a stability_over_time."
+            )
+
+        # if self._fitted_strategy is None:
+        #     raise RuntimeError("Fit the binner first.")
+
+        # aplica cortes (ordinal) em todas as variáveis
+        X_bins = self._fitted_strategy.transform(X)
+
+        # junta target e safra
+        df_aux = pd.concat([X_bins, y.rename("target"), X[time_col]], axis=1)
+
+        # para cada variável, cada bin e cada safra → event-rate
+        out = []
+        for var in X_bins.columns:
+            grp = (
+                df_aux.groupby([time_col, var])["target"]
+                .agg(["sum", "count"])
+                .reset_index()
+                .rename(columns={"sum": "event", "count": "total", var: "bin"})
+            )
+            grp["event_rate"] = grp["event"] / grp["total"]
+            grp["variable"] = var
+            out.append(grp)
+
+        df_rate = pd.concat(out, ignore_index=True)
+
+        pivot = (
+            df_rate.pivot_table(
+                index=["variable", "bin"],
+                columns=time_col,
+                values="event_rate",
+                fill_value=0
+            )
+            .sort_index(axis=1)
+            .sort_index()
+        )
+        return pivot
+
     # ------------------------------------------------------------------ #
-    def plot_event_rate_stability(self, **plot_kwargs):
-        if not hasattr(self, "_pivot_"):
-            raise ValueError("Fit the model with a time_col first.")
-        return plot_event_rate_stability(self._pivot_, **plot_kwargs)
+    def plot_event_rate_stability(self, pivot=None, *, title=None, **plot_kwargs):
+        """
+        Gera gráfico de event-rate por bin ao longo das safras.
+
+        Parâmetros
+        ----------
+        pivot : pd.DataFrame | None
+            DataFrame pivotado, tal como retornado por stability_over_time.
+            Se None, tenta usar self._pivot_.
+        title : str | None
+            Título opcional para o gráfico.
+        **plot_kwargs : dict
+            Argumentos extras repassados ao visualizador.
+
+        Retorna
+        -------
+        (fig, ax) : Matplotlib Figure e Axes
+        """
+        from .visualizations import plot_event_rate_stability as _plot
+
+        if pivot is None:
+            if getattr(self, "_pivot_", None) is None:
+                raise ValueError(
+                    "Nenhum pivot encontrado. "
+                    "Passe um pivot explícito ou chame stability_over_time primeiro."
+                )
+            pivot = self._pivot_
+
+        return _plot(pivot, title=title, **plot_kwargs)
