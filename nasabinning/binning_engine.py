@@ -16,7 +16,7 @@ from .metrics import iv               # placeholder
 from .temporal_stability import event_rate_by_time
 from .visualizations import plot_event_rate_stability
 import woodwork as ww
-
+from woodwork.logical_types import Categorical
 
 class NASABinner(BaseEstimator, TransformerMixin):
     def __init__(
@@ -69,6 +69,25 @@ class NASABinner(BaseEstimator, TransformerMixin):
                 df_ww.ww.set_semantic_tags(col, {"numeric"})
         return df_ww
 
+    def describe_schema(self) -> pd.DataFrame:
+        """
+        Devolve DataFrame com resumo do schema Woodwork.
+
+        col | logical_type | semantic_tags | role
+        """
+        records = []
+        for col in self.schema_.columns:
+            lt = self.schema_.logical_types[col].type_string
+            tags = ", ".join(sorted(self.schema_.semantic_tags[col]))
+            if col in getattr(self, "numeric_cols_", []):
+                role = "numeric"
+            elif col in getattr(self, "cat_cols_", []):
+                role = "categorical"
+            else:
+                role = "ignored"
+            records.append({"col": col, "logical_type": lt,
+                            "semantic_tags": tags, "role": role})
+        return pd.DataFrame(records)
 
     # ------------------------------------------------------------------ #
     def fit(
@@ -89,7 +108,10 @@ class NASABinner(BaseEstimator, TransformerMixin):
 
         # --------- Woodwork: inferência e overrides -----------------------
         ww_df = X.copy()
-        ww_df.ww.init()                     # cria schema padrão
+        ww_df.ww.init(
+            logical_types={c: Categorical for c in ww_df.select_dtypes("object").columns}
+        )
+
         ww_df = self._apply_overrides(ww_df)
         self.schema_ = ww_df.ww.schema      # salva para debug
 
