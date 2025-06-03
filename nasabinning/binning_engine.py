@@ -60,14 +60,14 @@ class NASABinner(BaseEstimator, TransformerMixin):
 
 
     def _apply_overrides(self, df_ww):
-        """Força tags conforme usuário."""
         for col in self.force_categorical:
             if col in df_ww.columns:
-                df_ww.ww.set_semantic_tags(col, {"category"})
+                df_ww.ww.add_semantic_tags(col, {"category"})
         for col in self.force_numeric:
             if col in df_ww.columns:
-                df_ww.ww.set_semantic_tags(col, {"numeric"})
+                df_ww.ww.add_semantic_tags(col, {"numeric"})
         return df_ww
+
 
     def describe_schema(self) -> pd.DataFrame:
         """
@@ -123,6 +123,9 @@ class NASABinner(BaseEstimator, TransformerMixin):
             c for c in ww_df.columns if "category" in ww_df.ww.logical_types[c].standard_tags
         ]
         self._ignored_cols = [c for c in ww_df.columns if c not in num_cols + cat_cols]
+
+        self.numeric_cols_ = num_cols
+        self.cat_cols_     = cat_cols
 
         X = ww_df                             # segue como DataFrame pandas+ww
 
@@ -203,23 +206,67 @@ class NASABinner(BaseEstimator, TransformerMixin):
 
 
     # ------------------------------------------------------------------ #
+    import inspect
     def transform(self, X: pd.DataFrame, *, return_woe: bool = False):
         if self._fitted_strategy is None:
             raise RuntimeError("Call fit before transform.")
-        Xt = self._fitted_strategy.transform(X, return_woe=return_woe)
+
+        sig = inspect.signature(self._fitted_strategy.transform)
+        extra = {"return_woe": return_woe} if "return_woe" in sig.parameters else {}
+        Xt = self._fitted_strategy.transform(X, **extra)
         return Xt
+
 
     def fit_transform(
         self, X: pd.DataFrame, y: pd.Series, **fit_params
     ):
         return self.fit(X, y, **fit_params).transform(X)
 
+
+    def get_bin_mapping(self, column: str) -> pd.DataFrame:
+        """
+        Retorna DataFrame categoria → bin para a coluna categórica `column`.
+
+        Funciona em três cenários:
+        1) NASABinner treinado apenas com essa coluna (categorical);
+        2) NASABinner multi-feature + Optuna (usa _per_feature_binners);
+        3) Encoder é "woe" (OptimalBinning) ou "ordinal" (fallback).
+        """
+        # ── localizar o binner da coluna ─────────────────────────────────
+        if hasattr(self, "_per_feature_binners") and column in self._per_feature_binners:
+            binner_col = self._per_feature_binners[column]
+        else:
+            if self._fitted_strategy is None:
+                raise RuntimeError("O binner ainda não foi treinado.")
+            binner_col = self._fitted_strategy        # fluxo simples
+
+        # ── extrair encoder & tipo ───────────────────────────────────────
+        if not hasattr(binner_col, "_encoder"):
+            raise ValueError(f"A coluna '{column}' não passou por CategoricalBinning.")
+        encoder, enc_type = binner_col._encoder
+
+        # ── construir mapeamento ────────────────────────────────────────
+        if enc_type == "woe":                     # OptimalBinning
+            mapping = encoder.splits["mapping"]   # dict categoria → bin
+        elif enc_type == "ordinal":               # fallback
+            mapping = encoder.mapping[0]["mapping"]  # dict categoria → código
+        else:
+            raise RuntimeError("Tipo de encoder desconhecido.")
+
+        return (
+            pd.Series(mapping, name="bin")
+            .reset_index()
+            .rename(columns={"index": "categoria"})
+            .sort_values("bin")
+            .reset_index(drop=True)
+        )
+
+
     # ------------------------------------------------------------------ #
     def bin_summary_(self):
         """Retorna DataFrame com cortes, event-rate, WoE, IV."""
         return self._bin_summary_
 
-    # -------------------------------------------------- #
     # ------------------------------------------------------------------ #
     def stability_over_time(
         self,
@@ -318,7 +365,6 @@ class NASABinner(BaseEstimator, TransformerMixin):
 
         # Garante que as chaves sejam do mesmo tipo que chegará no pivot
         return {bs[key_col].iloc[i]: str(bs["bin"].iloc[i]) for i in range(len(bs))}
-
 
     # ------------------------------------------------------------------ #
     def plot_event_rate_stability(self, pivot, **kwargs):
