@@ -103,4 +103,4 @@ Distribuído sob a licença MIT. Consulte o arquivo `LICENSE` para detalhes.
 
 
 ## 📬 Contato
-Para dúvidas ou sugestões, abra uma issue ou envie e-mail para [nasabinning@seu-dominio.com](mailto:nasabinning@seu-dominio.com).
+Para dúvidas ou sugestões, abra uma issue ou envie e-mail para [maia.ufrrj@gmail.com](mailto:maia.ufrrj@gmail.com).
