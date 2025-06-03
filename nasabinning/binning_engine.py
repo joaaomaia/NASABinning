@@ -160,49 +160,32 @@ class NASABinner(BaseEstimator, TransformerMixin):
         )
         return pivot
 
-    def _bin_code_to_label(self, var: str) -> dict[int, str]:
+    def _bin_code_to_label(self, var: str) -> dict:
         """
-        Constrói dicionário {codigo_int -> label_intervalo} para a variável `var`,
-        baseado em self._bin_summary_ já refinado.
+        Retorna um dicionário {bin_code -> intervalo_textual} para a variável `var`.
+        Funciona tanto se o código estiver salvo como int, float ou index posicional.
         """
-        bs = self._bin_summary_.loc[self._bin_summary_["variable"] == var]
-        # assume ordem dos bins na tabela = código 0..n-1
-        return {i: str(lbl) for i, lbl in enumerate(bs["bin"].tolist())}
+        bs = self._bin_summary_.loc[self._bin_summary_["variable"] == var].copy()
+
+        # Tenta adivinhar qual coluna guarda o código interno
+        for cand in ("bin_code", "bin_code_float", "bin_code_int"):
+            if cand in bs.columns:
+                key_col = cand
+                break
+        else:  # fallback: usar a posição dos bins
+            bs = bs.reset_index(drop=True)
+            bs["__pos__"] = bs.index.astype(float)
+            key_col = "__pos__"
+
+        # Garante que as chaves sejam do mesmo tipo que chegará no pivot
+        return {bs[key_col].iloc[i]: str(bs["bin"].iloc[i]) for i in range(len(bs))}
 
 
     # ------------------------------------------------------------------ #
-    def plot_event_rate_stability(
-        self,
-        pivot=None,
-        *,
-        title_prefix=None,
-        time_col_label: str | None = None,
-    ):
+    def plot_event_rate_stability(self, pivot, **kwargs):
         """
-        Gera gráfico(s) de estabilidade temporal.
-
-        Parameters
-        ----------
-        pivot : pd.DataFrame | None
-            Se None, usa self._pivot_ (quando houver).
-        title_prefix : str | None
-            Prefixo para o título de cada figura.
-        time_col_label : str | None
-            Texto a ser usado no eixo-X (ex.: "AnoMesReferencia").
+        Wrapper fino que delega ao módulo `visualizations`.
+        Permite chamar:  binner.plot_event_rate_stability(pivot, ...)
         """
-        from .visualizations import plot_event_rate_stability as _plot
-
-        if pivot is None:
-            pivot = getattr(self, "_pivot_", None)
-            if pivot is None:
-                raise ValueError(
-                    "Nenhum pivot encontrado. "
-                    "Passe um pivot explícito ou chame stability_over_time primeiro."
-                )
-
-        return _plot(
-            pivot,
-            label_mapper=self._bin_code_to_label,
-            title_prefix=title_prefix,
-            time_col_label=time_col_label,
-        )
+        from nasabinning.visualizations import plot_event_rate_stability
+        return plot_event_rate_stability(pivot, binner=self, **kwargs)
