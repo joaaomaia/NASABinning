@@ -7,9 +7,10 @@ Usa Matplotlib (sem cores explícitas, conforme guidelines).
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
+from matplotlib.ticker import FuncFormatter
 
-HEX_BASE = "#023059"   # azul escuro pedido
-HEX_MIN  = "#B5C1CD"   # azul mais claro permitido
+HEX_BASE = "#023059"   # Azul escuro de referência
+HEX_MIN  = "#B5C1CD"   # Azul claro mínimo permitido
 
 
 def _blend_palette(n: int):
@@ -26,49 +27,62 @@ def plot_event_rate_stability(
     figsize=(12, 4),
 ) -> None:
     """
-    Um gráfico por variável; linhas = bins (com legendas textuais).
+    Gera um gráfico por variável, exibindo event rate em porcentagem (%).
+    Linhas = bins (com legendas textuais).
 
-    Parameters
+    Parâmetros
     ----------
-    pivot : DataFrame (index = (variable, bin_code_int), columns = yyyymm)
+    pivot : DataFrame
+        DataFrame pivotado (índice = (variable, bin_code_int), colunas = yyyymm).
     label_mapper : Callable[var] -> dict[int, str]
-        Traduz código do bin (0,1,2,…) para o intervalo textual
-        '(-inf, 24.70)', …
+        Função que mapeia o código inteiro de cada bin para o intervalo textual,
+        exatamente como aparece em `binner._bin_summary_`.
+    title_prefix : str | None
+        Título prefixo para cada figura.
+    time_col_label : str | None
+        Legenda a ser usada no eixo X (ex.: "AnoMesReferencia").
+    figsize : tuple[int, int]
+        Tamanho da figura em polegadas (largura, altura).
     """
 
     if pivot is None or pivot.empty:
         raise ValueError("pivot vazio — calcule stability_over_time primeiro.")
 
     for var in pivot.index.get_level_values("variable").unique():
-        # ---------- prepara dados longos ------------------------------------
+        # ---------- prepara os dados longos ------------------------------------
         mapping = label_mapper(var)
 
         df_long = (
-            pivot.loc[var]
-            .reset_index()          # ['bin', safra1, safra2, ...]
-            .astype({"bin": int})
+            pivot.loc[var]                             # seleciona a variável
+            .reset_index()                              # ['bin', safra1, safra2, ...]
+            .astype({"bin": int})                       # garante inteiro
             .melt(id_vars="bin", var_name="safra", value_name="event_rate")
-            .replace({"bin": mapping})          # código → intervalo
+            .replace({"bin": mapping})                  # código → intervalos textuais
             .rename(columns={"bin": "Bin"})
         )
 
-        # garante 1 linha por (Bin, safra)  —— remove duplicados
+        # Agrupa para garantir apenas um ponto por (Bin, safra)
         df_long = (
             df_long.groupby(["Bin", "safra"], as_index=False)
             .agg(event_rate=("event_rate", "mean"))
             .sort_values("safra")
         )
 
-        # eixo-X string yyyymm
+        # Converte event_rate para porcentagem
+        df_long["event_rate"] = df_long["event_rate"] * 100
+
+        # Converte eixo X para string “yyyymm” 
         df_long["safra"] = df_long["safra"].astype(str)
 
-        # ---------- paleta coerente (claro→escuro) --------------------------
+        # ---------- paleta coerente (claro → escuro) ----------------------------
         means = df_long.groupby("Bin")["event_rate"].mean().sort_values()
-        palette = {b: c for b, c in zip(means.index, _blend_palette(len(means)))}
+        palette = {
+            b: c for b, c in zip(means.index, _blend_palette(len(means)))
+        }
 
-        # ---------- plot ----------------------------------------------------
+        # ---------- plot -------------------------------------------------------
         plt.figure(figsize=figsize)
-        sns.lineplot(
+        ax = sns.lineplot(
             data=df_long,
             x="safra",
             y="event_rate",
@@ -76,18 +90,24 @@ def plot_event_rate_stability(
             palette=palette,
             marker="o",
             linewidth=1.5,
-            estimator=None,   #  ←  acrescentar
-            errorbar=None,    #  ←  acrescentar
+            estimator=None,
+            errorbar=None,
         )
 
+        # Título e rótulos
         if title_prefix:
             plt.title(f"{title_prefix} – {var}")
         plt.xlabel(time_col_label or "Safra")
-        plt.ylabel("Event Rate")
-        plt.gca().set_facecolor("white")
-        plt.grid(False)
+        plt.ylabel("Event Rate (%)")
 
-        # legenda embaixo
+        # Formata eixo Y para duas casas decimais
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, pos: f"{v:.2f}"))
+
+        # Remover gridlines de fundo
+        ax.set_facecolor("white")
+        ax.grid(False)
+
+        # Legenda abaixo do gráfico
         plt.legend(
             title="Bin",
             loc="upper center",
@@ -98,6 +118,4 @@ def plot_event_rate_stability(
         )
 
         plt.tight_layout()
-
-    # Não retorna nada → célula não exibirá lista de figuras
-    plt.show()
+        plt.show()
