@@ -5,6 +5,7 @@ optbinning>=0.18.0     # Supervised optimal binning
 optuna>=3.6            # Optional optimisation
 matplotlib>=3.9
 seaborn>=0.13
+openpyxl>=3.1      # engine default do pandas para .xlsx
 
 # Dev / testes (opcional)
 pytest>=8.2

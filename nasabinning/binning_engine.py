@@ -42,7 +42,32 @@ class NASABinner(BaseEstimator, TransformerMixin):
     # ------------------------------------------------------------------ #
     def fit(self, X: pd.DataFrame, y: pd.Series, *, time_col: str = None):
         """Treina o binner nos dados."""
+        assert isinstance(X, pd.DataFrame), "X deve ser um DataFrame"
+        assert isinstance(y, pd.Series), "y deve ser uma Series"
+
         X = X.copy()
+
+        # -------------------------------------------------- #
+        # se optuna estiver ligado, delega a otimização
+        if self.use_optuna:
+            from .optuna_optimizer import optimize_bins
+            best_params, opt_binner = optimize_bins(
+                X, y,
+                time_col=time_col,
+                n_trials=self.strategy_kwargs.pop("n_trials", 20),
+                strategy=self.strategy,
+                min_event_rate_diff=self.min_event_rate_diff,
+                monotonic=self.monotonic,
+                check_stability=self.check_stability,
+            )
+            # clona atributos do melhor
+            self.__dict__.update(opt_binner.__dict__)
+            
+            #Guardar melhor os hiperparâmetros otimizados
+            self.best_params_ = best_params
+            return self
+        # -------------------------------------------------- #
+
         self._fitted_strategy = get_strategy(
             self.strategy, **self.strategy_kwargs
         )
