@@ -25,7 +25,7 @@ class NASABinner(BaseEstimator, TransformerMixin):
         self,
         strategy: str = "supervised",
         # hiper-parâmetros globais
-        max_bins: int = 6,                       #  ←  NOVO
+        max_bins: int = 6,
         min_event_rate_diff: float = 0.02,
         monotonic: str | None = None,
         check_stability: bool = False,
@@ -148,7 +148,13 @@ class NASABinner(BaseEstimator, TransformerMixin):
         # ────────── fluxo categórico ────────
         for col in cat_cols:
             from .strategies.categorical import CategoricalBinning
-            strat = CategoricalBinning()
+
+            strat = CategoricalBinning(
+                rare_threshold=0.01,      # ou mantenha o default que você quiser
+                max_bins=self.max_bins,   # <-- aqui
+                #min_bin_size=0.05         # opcional; ou ajuste conforme quiser
+            )
+
             strat.fit(X[[col]], y)
 
             # resumo original do CategoricalBinning, que já contém colunas:
