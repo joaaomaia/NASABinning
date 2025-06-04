@@ -4,8 +4,9 @@ binning_engine.py
 Orquestra a escolha de estratégia (supervised / unsupervised),
 aplica refinamentos e expõe interface scikit-learn-compatível.
 """
+from __future__ import annotations
 from typing import List, Optional, Dict
-import pandas as pd
+import inspect, pandas as pd
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 
@@ -15,8 +16,9 @@ from .metrics import iv               # placeholder
 
 from .temporal_stability import event_rate_by_time
 from .visualizations import plot_event_rate_stability
-import woodwork as ww
-from woodwork.logical_types import Categorical
+from .utils.dtypes import search_dtypes
+from .strategies import get_strategy
+
 
 class NASABinner(BaseEstimator, TransformerMixin):
     def __init__(
@@ -59,85 +61,30 @@ class NASABinner(BaseEstimator, TransformerMixin):
         self._bin_summary_ = None
 
 
-    def _apply_overrides(self, df_ww):
-        for col in self.force_categorical:
-            if col in df_ww.columns:
-                df_ww.ww.add_semantic_tags(col, {"category"})
-        for col in self.force_numeric:
-            if col in df_ww.columns:
-                df_ww.ww.add_semantic_tags(col, {"numeric"})
-        return df_ww
-
-
-    def describe_schema(self) -> pd.DataFrame:
-        """
-        Devolve DataFrame com resumo do schema Woodwork.
-
-        col | logical_type | semantic_tags | role
-        """
-        records = []
-        for col in self.schema_.columns:
-            lt = self.schema_.logical_types[col].type_string
-            tags = ", ".join(sorted(self.schema_.semantic_tags[col]))
-            if col in getattr(self, "numeric_cols_", []):
-                role = "numeric"
-            elif col in getattr(self, "cat_cols_", []):
-                role = "categorical"
-            else:
-                role = "ignored"
-            records.append({"col": col, "logical_type": lt,
-                            "semantic_tags": tags, "role": role})
-        return pd.DataFrame(records)
-
-    # ------------------------------------------------------------------ #
-    def fit(
-            self,
-            X: pd.DataFrame,
-            y: pd.Series,
-            *,
-            time_col: str | None = None
-            ):
-        """Treina o binner.  Se use_optuna=True, otimiza coluna-a-coluna."""
-        # ---------- validações -------------------------------------------
+    def fit(self, X: pd.DataFrame, y: pd.Series, *, time_col: str | None = None):
+        """Treina o binner. Se use_optuna=True, otimiza coluna-a-coluna."""
         assert isinstance(X, pd.DataFrame), "X deve ser um DataFrame"
-        assert isinstance(y, pd.Series),   "y deve ser uma Series"
+        assert isinstance(y, pd.Series),    "y deve ser uma Series"
 
-        # --------- time_col definido? (opcional) --------------------------
         time_col = time_col or self.time_col
-        self.time_col = time_col  # garante que será armazenado mesmo que só apareça agora
+        self.time_col = time_col            # garante persistência
 
-        # --------- Woodwork: inferência e overrides -----------------------
-        ww_df = X.copy()
-        ww_df.ww.init(
-            logical_types={c: Categorical for c in ww_df.select_dtypes("object").columns}
+        # ========= 1. Detectar tipos (substitui Woodwork) =============
+        num_cols, cat_cols = search_dtypes(
+            pd.concat([X, y.rename("target")], axis=1),
+            target_col="target",
+            limite_categorico=50,
+            force_categorical=self.force_categorical,
+            verbose=False
         )
-
-        ww_df = self._apply_overrides(ww_df)
-        self.schema_ = ww_df.ww.schema      # salva para debug
-
-        # listas de colunas
-        num_cols = [
-            c for c in ww_df.columns if "numeric" in ww_df.ww.logical_types[c].standard_tags
-        ]
-        cat_cols = [
-            c for c in ww_df.columns if "category" in ww_df.ww.logical_types[c].standard_tags
-        ]
-        self._ignored_cols = [c for c in ww_df.columns if c not in num_cols + cat_cols]
-
+        # armazenar para describe_schema()
         self.numeric_cols_ = num_cols
         self.cat_cols_     = cat_cols
+        self.ignored_cols_ = [c for c in X.columns if c not in num_cols + cat_cols]
 
-        X = ww_df                             # segue como DataFrame pandas+ww
-
-
-
-        # ==================================================================
-        # 1. OPTUNA → um estudo por variável
-        # ==================================================================
+        # ========= 2. Fluxo com Optuna (por feature) ==================
         if self.use_optuna:
             from .optuna_optimizer import optimize_bins
-            self._per_feature_binners = {}
-            summaries, self.best_params_, self.iv_dict_ = [], {}, {}
 
             n_trials = self.strategy_kwargs.pop("n_trials", 20)
             base_kwargs = dict(
@@ -146,77 +93,103 @@ class NASABinner(BaseEstimator, TransformerMixin):
                 monotonic=self.monotonic,
                 check_stability=self.check_stability,
             )
-
+            self._per_feature_binners = {}
+            self.best_params_ = {}
             for col in num_cols + cat_cols:
                 best, b_col = optimize_bins(
-                    X[[col]], y, time_col=time_col, n_trials=n_trials, **base_kwargs
+                    X[[col]], y,
+                    time_col=time_col,
+                    n_trials=n_trials,
+                    **base_kwargs
                 )
                 self._per_feature_binners[col] = b_col
                 self.best_params_[col] = best
-                self.iv_dict_[col] = b_col.iv_
-                summaries.append(b_col._bin_summary_)
 
-            self._bin_summary_ = pd.concat(summaries, ignore_index=True)
-            self.iv_ = sum(self.iv_dict_.values())
-
-            if time_col and time_col in self._bin_summary_.columns:
-                from .temporal_stability import event_rate_by_time
-                self._pivot_ = event_rate_by_time(self._bin_summary_, time_col)
-            else:
-                self._pivot_ = None
-
-            self._fitted_strategy = None
+            # monta bin_summary_ global
+            self._bin_summary_ = pd.concat(
+                [b._bin_summary_ for b in self._per_feature_binners.values()],
+                ignore_index=True
+            )
+            # calcula IV global (soma dos IVs individuais)
+            from .metrics import iv
+            self.iv_ = self._bin_summary_.groupby("variable").apply(iv).sum()
             return self
+        
+        # ========= 3. Fluxo tradicional  (sem Optuna) ======================
+        self._per_feature_binners = {}          # sempre criamos o dicionário
+        self._bin_summary_       = []
 
-        # ==================================================================
-        # 2. Fluxo tradicional (sem Optuna)
-        # ==================================================================
+        # ────────── fluxo numérico ──────────
+        for col in num_cols:
+            strat = get_strategy("supervised", **self.strategy_kwargs)
+            strat.fit(X[[col]], y, monotonic_trend=self.monotonic)
 
-        # Achata eventual aninhamento strategy_kwargs
-        if "strategy_kwargs" in self.strategy_kwargs:
-            nested = self.strategy_kwargs.pop("strategy_kwargs")
-            for k, v in nested.items():
-                # mantém valor existente se já definido externamente
-                self.strategy_kwargs.setdefault(k, v)
+            summary = refine_bins(          # <<<<<<
+                strat.bin_summary_,         # usa bin_summary_ direto
+                min_er_delta=self.min_event_rate_diff,
+                trend=self.monotonic,
+                time_col=time_col,
+                check_stability=self.check_stability,
+            )
 
-        self._fitted_strategy = get_strategy(self.strategy, **self.strategy_kwargs)
-        self._fitted_strategy.fit(X, y, monotonic_trend=self.monotonic)
+            # ── limpa linhas indesejadas ───────────────────────────────────────
+            summary = summary[
+                (summary["count"] > 0) &          # exclui bins vazios
+                (~summary["bin"].isin(["Total", "Special", "Missing"]))
+            ].reset_index(drop=True)
 
-        from .refinement import refine_bins
-        self._bin_summary_ = refine_bins(
-            self._fitted_strategy.bin_summary_,
-            min_er_delta=self.min_event_rate_diff,
-            trend=self.monotonic,
-            time_col=time_col,
-            check_stability=self.check_stability,
-        )
+            self._per_feature_binners[col] = strat
+            self._bin_summary_.append(summary)
 
-        # Pivot global (se aplicável)
-        if time_col and time_col in self._bin_summary_.columns:
-            from .temporal_stability import event_rate_by_time
-            self._pivot_ = event_rate_by_time(self._bin_summary_, time_col)
-        else:
-            self._pivot_ = None
+        # ────────── fluxo categórico ────────
+        for col in cat_cols:
+            from .strategies.categorical import CategoricalBinning
+            strat = CategoricalBinning()
+            strat.fit(X[[col]], y)
 
-        # IV único
+            summary = strat.bin_summary_    # <<<<<< não há refine_bins (já é categórico)
+
+            # ── limpa linhas indesejadas ───────────────────────────────────────
+            summary = summary[
+                (summary["count"] > 0) &          # exclui bins vazios
+                (~summary["bin"].isin(["Total", "Special", "Missing"]))
+            ].reset_index(drop=True)
+
+            self._per_feature_binners[col] = strat
+            self._bin_summary_.append(summary)           
+
+        # junta tudo num único DataFrame
+        self._bin_summary_ = pd.concat(self._bin_summary_, ignore_index=True)
+
+        # IV global  =  soma dos IVs individuais
         from .metrics import iv
-        self.iv_ = iv(self._bin_summary_)
-
+        self.iv_ = self._bin_summary_.groupby("variable").apply(iv).sum()
         return self
 
 
-    # ------------------------------------------------------------------ #
-    import inspect
+    # ----------------------------------------------------------------
     def transform(self, X: pd.DataFrame, *, return_woe: bool = False):
-        if self._fitted_strategy is None:
-            raise RuntimeError("Call fit before transform.")
+        out = {}
+        for col, b in self._per_feature_binners.items():
+            sig = inspect.signature(b.transform)
+            kw  = {"return_woe": return_woe} if "return_woe" in sig.parameters else {}
+            out[col] = b.transform(X[[col]], **kw)[col]
+        return pd.DataFrame(out, index=X.index)
 
-        sig = inspect.signature(self._fitted_strategy.transform)
-        extra = {"return_woe": return_woe} if "return_woe" in sig.parameters else {}
-        Xt = self._fitted_strategy.transform(X, **extra)
-        return Xt
 
+    # ----------------------------------------------------------------
+    def describe_schema(self) -> pd.DataFrame:
+        """Resumo simples do papel de cada coluna."""
+        records = []
+        for col in self.numeric_cols_:
+            records.append({"col": col, "role": "numeric"})
+        for col in self.cat_cols_:
+            records.append({"col": col, "role": "categorical"})
+        for col in getattr(self, "ignored_cols_", []):
+            records.append({"col": col, "role": "ignored"})
+        return pd.DataFrame(records)
 
+    # ------------------------------------------------------------------ #
     def fit_transform(
         self, X: pd.DataFrame, y: pd.Series, **fit_params
     ):

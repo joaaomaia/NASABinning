@@ -9,7 +9,16 @@ Pós-processamento dos cortes:
 
 from __future__ import annotations
 import pandas as pd
+import numpy as np
+import re
 
+_INTERVAL_RE = re.compile(r"""
+    ^\s*
+    (?P<lb>[\(\[]) \s*
+    (?P<left>-?inf|[-+]?\d*\.?\d+) \s*,\s*
+    (?P<right>-?inf|[-+]?\d*\.?\d+)
+    \s* (?P<rb>[\)\]]) \s*
+$""", re.VERBOSE)
 
 def _check_monotonic(series: pd.Series, trend: str) -> bool:
     if trend == "ascending":
@@ -129,20 +138,26 @@ def refine_bins(
 
 
 def _merge(df: pd.DataFrame, i: int, j: int) -> pd.DataFrame:
-    """
-    Fundir as linhas i e j, somando contagens e recálculando event_rate.
-    Mantém a ordem original (linha i permanece, linha j é removida).
-    """
+    """Fundir linhas i e j; ajustar rótulo se forem intervalos contíguos."""
+    # somar contagens
     cols = ["count", "non_event", "event"]
-    # Soma linha i + linha j para as colunas numéricas
     df.loc[i, cols] = df.loc[[i, j], cols].sum()
-
-    # Recalcula event_rate na linha i
     df.loc[i, "event_rate"] = df.loc[i, "event"] / df.loc[i, "count"]
 
-    # Descarta linha j e reajusta índices
-    return df.drop(index=j).reset_index(drop=True)
+    # tentar reconhecer ambos os rótulos como intervalos
+    m_i = _INTERVAL_RE.match(str(df.at[i, "bin"]))
+    m_j = _INTERVAL_RE.match(str(df.at[j, "bin"]))
 
+    if m_i and m_j:
+        # extremos a preservar
+        new_left  = m_i.group("left")
+        new_right = m_j.group("right")
+        lb = m_i.group("lb")         # parêntese ou colchete esquerdo
+        rb = m_j.group("rb")         # direito
+        df.at[i, "bin"] = f"{lb}{new_left}, {new_right}{rb}"
+
+    # remover linha j e reindexar
+    return df.drop(index=j).reset_index(drop=True)
 
 
 
