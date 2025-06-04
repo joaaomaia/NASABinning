@@ -95,6 +95,7 @@ class NASABinner(BaseEstimator, TransformerMixin):
             )
             self._per_feature_binners = {}
             self.best_params_ = {}
+
             for col in num_cols + cat_cols:
                 best, b_col = optimize_bins(
                     X[[col]], y,
@@ -105,7 +106,7 @@ class NASABinner(BaseEstimator, TransformerMixin):
                 self._per_feature_binners[col] = b_col
                 self.best_params_[col] = best
 
-            # monta bin_summary_ global
+            # monta bin_summary global (já é DataFrame)
             self.bin_summary = pd.concat(
                 [b.bin_summary for b in self._per_feature_binners.values()],
                 ignore_index=True
@@ -114,18 +115,19 @@ class NASABinner(BaseEstimator, TransformerMixin):
             from .metrics import iv
             self.iv_ = self.bin_summary.groupby("variable").apply(iv).sum()
             return self
-        
-        # ========= 3. Fluxo tradicional  (sem Optuna) ======================
-        self._per_feature_binners = {}          # sempre criamos o dicionário
-        self.bin_summary       = []
+
+        # ========= 3. Fluxo tradicional (sem Optuna) ======================
+        self._per_feature_binners = {}    # dicionário de binners por feature
+        self.bin_summary       = []      # lista temporária para coletar cada DataFrame
 
         # ────────── fluxo numérico ──────────
         for col in num_cols:
             strat = get_strategy("supervised", **self.strategy_kwargs)
             strat.fit(X[[col]], y, monotonic_trend=self.monotonic)
 
-            summary = refine_bins(          # <<<<<<
-                strat.bin_summary_,         # usa bin_summary_ direto
+            # passo de “refine_bins” usando min_event_rate_diff
+            summary = refine_bins(
+                strat.bin_summary_,
                 min_er_delta=self.min_event_rate_diff,
                 trend=self.monotonic,
                 time_col=time_col,
@@ -136,10 +138,9 @@ class NASABinner(BaseEstimator, TransformerMixin):
             summary = summary[
                 (summary["count"] > 0) &
                 (~summary["bin"].astype(str).str.lower().isin(["total", "special", "missing"])) &
-                (summary["bin"] != summary["variable"]) &        #  ←  remove total-geral
+                (summary["bin"] != summary["variable"]) &        # remove total-geral
                 (summary["bin"] != "")
             ].reset_index(drop=True)
-
 
             self._per_feature_binners[col] = strat
             self.bin_summary.append(summary)
@@ -150,26 +151,37 @@ class NASABinner(BaseEstimator, TransformerMixin):
             strat = CategoricalBinning()
             strat.fit(X[[col]], y)
 
-            summary = strat.bin_summary_    # <<<<<< não há refine_bins (já é categórico)
+            # resumo original do CategoricalBinning, que já contém colunas:
+            # ["variable", "bin", "count", "event", "non_event", "event_rate", ...]
+            summary = strat.bin_summary_
+
+            # aplica refine_bins, exatamente como fizemos no bloco numérico
+            summary = refine_bins(
+                summary,
+                min_er_delta=self.min_event_rate_diff,
+                trend=None,         # para categorias normalmente não impomos monotonicidade
+                time_col=None,      # sem “safra” para binagem categórica
+                check_stability=False
+            )
 
             # ── limpa linhas indesejadas ───────────────────────────────────────
             summary = summary[
                 (summary["count"] > 0) &
                 (~summary["bin"].astype(str).str.lower().isin(["total", "special", "missing"])) &
-                (summary["bin"] != summary["variable"]) &        #  ←  remove total-geral
+                (summary["bin"] != summary["variable"]) &        # remove total-geral
                 (summary["bin"] != "")
             ].reset_index(drop=True)
 
             self._per_feature_binners[col] = strat
             self.bin_summary.append(summary)
-           
 
-        # junta tudo num único DataFrame
+        # ───── concatena tudo num único DataFrame ─────────────────────────
         self.bin_summary = pd.concat(self.bin_summary, ignore_index=True)
 
-        # IV global  =  soma dos IVs individuais
+        # IV global = soma dos IVs individuais
         from .metrics import iv
         self.iv_ = self.bin_summary.groupby("variable").apply(iv).sum()
+
         return self
 
 
