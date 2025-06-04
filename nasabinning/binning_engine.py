@@ -134,9 +134,12 @@ class NASABinner(BaseEstimator, TransformerMixin):
 
             # ── limpa linhas indesejadas ───────────────────────────────────────
             summary = summary[
-                (summary["count"] > 0) &          # exclui bins vazios
-                (~summary["bin"].isin(["Total", "Special", "Missing"]))
+                (summary["count"] > 0) &
+                (~summary["bin"].astype(str).str.lower().isin(["total", "special", "missing"])) &
+                (summary["bin"] != summary["variable"]) &        #  ←  remove total-geral
+                (summary["bin"] != "")
             ].reset_index(drop=True)
+
 
             self._per_feature_binners[col] = strat
             self.bin_summary.append(summary)
@@ -151,8 +154,10 @@ class NASABinner(BaseEstimator, TransformerMixin):
 
             # ── limpa linhas indesejadas ───────────────────────────────────────
             summary = summary[
-                (summary["count"] > 0) &          # exclui bins vazios
-                (~summary["bin"].isin(["Total", "Special", "Missing"]))
+                (summary["count"] > 0) &
+                (~summary["bin"].astype(str).str.lower().isin(["total", "special", "missing"])) &
+                (summary["bin"] != summary["variable"]) &        #  ←  remove total-geral
+                (summary["bin"] != "")
             ].reset_index(drop=True)
 
             self._per_feature_binners[col] = strat
