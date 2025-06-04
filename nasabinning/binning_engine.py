@@ -147,13 +147,12 @@ class NASABinner(BaseEstimator, TransformerMixin):
 
         # ────────── fluxo categórico ────────
         for col in cat_cols:
+            
             from .strategies.categorical import CategoricalBinning
-
+            
             strat = CategoricalBinning(
-                rare_threshold=0.01,      # ou mantenha o default que você quiser
-                max_bins=self.max_bins,   # <-- aqui
-                #min_bin_size=0.05         # opcional; ou ajuste conforme quiser
-            )
+                max_bins=self.max_bins
+                )
 
             strat.fit(X[[col]], y)
 
@@ -177,6 +176,8 @@ class NASABinner(BaseEstimator, TransformerMixin):
                 (summary["bin"] != summary["variable"]) &        # remove total-geral
                 (summary["bin"] != "")
             ].reset_index(drop=True)
+
+            summary = summary.sort_values("event_rate", ascending=False).reset_index(drop=True)
 
             self._per_feature_binners[col] = strat
             self.bin_summary.append(summary)

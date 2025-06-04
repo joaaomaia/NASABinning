@@ -52,8 +52,8 @@ def _objective(
 
     # métrica composta que queremos MINIMIZAR
     iv = binner.iv_
-    psi = binner._bin_summary_.attrs.get("psi_over_time", 0.0) or 0.0
-    n_bins = len(binner._bin_summary_)
+    psi = binner.bin_summary.attrs.get("psi_over_time", 0.0) or 0.0
+    n_bins = len(binner.bin_summary)
 
     if n_bins < 2:
         # penalização forte / descarta trial
@@ -89,6 +89,10 @@ def optimize_bins(
         Binner treinado com os melhores hiperparâmetros.
     """
     study = optuna.create_study(direction="minimize")
+
+    # ajustando verbose do optuna
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+
     study.optimize(
         lambda tr: _objective(tr, X, y, base_kwargs, time_col),
         n_trials=n_trials,
