@@ -58,7 +58,7 @@ class NASABinner(BaseEstimator, TransformerMixin):
 
         # internos
         self._fitted_strategy = None
-        self._bin_summary_ = None
+        self.bin_summary = None
 
 
     def fit(self, X: pd.DataFrame, y: pd.Series, *, time_col: str | None = None):
@@ -106,18 +106,18 @@ class NASABinner(BaseEstimator, TransformerMixin):
                 self.best_params_[col] = best
 
             # monta bin_summary_ global
-            self._bin_summary_ = pd.concat(
-                [b._bin_summary_ for b in self._per_feature_binners.values()],
+            self.bin_summary = pd.concat(
+                [b.bin_summary for b in self._per_feature_binners.values()],
                 ignore_index=True
             )
             # calcula IV global (soma dos IVs individuais)
             from .metrics import iv
-            self.iv_ = self._bin_summary_.groupby("variable").apply(iv).sum()
+            self.iv_ = self.bin_summary.groupby("variable").apply(iv).sum()
             return self
         
         # ========= 3. Fluxo tradicional  (sem Optuna) ======================
         self._per_feature_binners = {}          # sempre criamos o dicionário
-        self._bin_summary_       = []
+        self.bin_summary       = []
 
         # ────────── fluxo numérico ──────────
         for col in num_cols:
@@ -139,7 +139,7 @@ class NASABinner(BaseEstimator, TransformerMixin):
             ].reset_index(drop=True)
 
             self._per_feature_binners[col] = strat
-            self._bin_summary_.append(summary)
+            self.bin_summary.append(summary)
 
         # ────────── fluxo categórico ────────
         for col in cat_cols:
@@ -156,14 +156,15 @@ class NASABinner(BaseEstimator, TransformerMixin):
             ].reset_index(drop=True)
 
             self._per_feature_binners[col] = strat
-            self._bin_summary_.append(summary)           
+            self.bin_summary.append(summary)
+           
 
         # junta tudo num único DataFrame
-        self._bin_summary_ = pd.concat(self._bin_summary_, ignore_index=True)
+        self.bin_summary = pd.concat(self.bin_summary, ignore_index=True)
 
         # IV global  =  soma dos IVs individuais
         from .metrics import iv
-        self.iv_ = self._bin_summary_.groupby("variable").apply(iv).sum()
+        self.iv_ = self.bin_summary.groupby("variable").apply(iv).sum()
         return self
 
 
@@ -238,7 +239,7 @@ class NASABinner(BaseEstimator, TransformerMixin):
     # ------------------------------------------------------------------ #
     def bin_summary_(self):
         """Retorna DataFrame com cortes, event-rate, WoE, IV."""
-        return self._bin_summary_
+        return self.bin_summary
 
     # ------------------------------------------------------------------ #
     def stability_over_time(
@@ -324,7 +325,7 @@ class NASABinner(BaseEstimator, TransformerMixin):
         Retorna um dicionário {bin_code -> intervalo_textual} para a variável `var`.
         Funciona tanto se o código estiver salvo como int, float ou index posicional.
         """
-        bs = self._bin_summary_.loc[self._bin_summary_["variable"] == var].copy()
+        bs = self.bin_summary.loc[self.bin_summary["variable"] == var].copy()
 
         # Tenta adivinhar qual coluna guarda o código interno
         for cand in ("bin_code", "bin_code_float", "bin_code_int"):
