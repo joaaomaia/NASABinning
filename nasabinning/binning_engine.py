@@ -183,11 +183,11 @@ class NASABinner(BaseEstimator, TransformerMixin):
         """Resumo simples do papel de cada coluna."""
         records = []
         for col in self.numeric_cols_:
-            records.append({"col": col, "role": "numeric"})
+            records.append({"col": col, "tipo": "numeric"})
         for col in self.cat_cols_:
-            records.append({"col": col, "role": "categorical"})
+            records.append({"col": col, "tipo": "categorical"})
         for col in getattr(self, "ignored_cols_", []):
-            records.append({"col": col, "role": "ignored"})
+            records.append({"col": col, "tipo": "ignored"})
         return pd.DataFrame(records)
 
     # ------------------------------------------------------------------ #
