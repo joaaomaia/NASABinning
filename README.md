@@ -6,6 +6,20 @@
 
 Desenvolvido para facilitar a decisão de agrupamento de variáveis numéricas e categóricas.
 
+## Visão geral
+
+O NASABinning prioriza **estabilidade temporal** das taxas de evento. A biblioteca
+utiliza o `OptimalBinning` como base única para a geração dos cortes e o
+`Optuna` apenas para otimizar seus hiperparâmetros. O objetivo principal é
+encontrar binagens que mantenham curvas de `event rate` bem separadas e
+consistentes mês a mês. Métricas clássicas como IV e KS continuam sendo
+calculadas, porém com peso secundário na seleção final dos bins.
+O score utilizado na otimização segue a fórmula:
+
+```
+score = 0.7 * separabilidade + 0.2 * IV + 0.1 * KS
+```
+
 ## Principais recursos
 
 | Recurso | Descrição |
@@ -13,8 +27,8 @@ Desenvolvido para facilitar a decisão de agrupamento de variáveis numéricas e
 | **Binning supervisionado e não supervisionado** | Estratégias plug-and-play (Optimal Binning, quantílico, largura fixa, k-means). |
 | **Monotonicidade opcional** | Respeita tendências crescentes ou decrescentes para facilitar interpretação regulatória. |
 | **Diferença mínima de **event rate**** | Evita sobreposição de grupos ao unir automaticamente bins muito semelhantes. |
-| **Estabilidade temporal** | Calcula PSI, KS e desvio-padrão por safra; aplica penalizações ou mesclagens conforme limiares. |
-| **Otimização com Optuna (opcional)** | Busca corte ótimo maximizando IV e estabilidade, com múltiplas penalizações configuráveis. |
+| **Estabilidade temporal** | Calcula PSI, KS e o `temporal_separability_score` para priorizar curvas consistentes ao longo dos meses. |
+| **Otimização com Optuna (opcional)** | Explora hiperparâmetros do `OptimalBinning` visando maior separabilidade temporal; IV e KS servem como apoio na decisão. |
 | **Integração scikit-learn** | `NASABinner` implementa ``fit`/`transform``, permitindo uso em `Pipeline`. |
 | **Relatórios auditáveis** | Geração de tabelas e gráficos em `.xlsx`, `.json` e Matplotlib para `WoE`, event-rate e estabilidade. |
 

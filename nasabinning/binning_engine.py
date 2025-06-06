@@ -3,6 +3,7 @@
 binning_engine.py
 Orquestra a escolha de estratégia (supervised / unsupervised),
 aplica refinamentos e expõe interface scikit-learn-compatível.
+O foco está em manter a separação temporal das curvas de event rate.
 """
 from __future__ import annotations
 from typing import List, Optional, Dict
@@ -97,9 +98,11 @@ class NASABinner(BaseEstimator, TransformerMixin):
             self.best_params_ = {}
 
             for col in num_cols + cat_cols:
+                time_vals = X[time_col] if time_col else None
                 best, b_col = optimize_bins(
                     X[[col]], y,
                     time_col=time_col,
+                    time_values=time_vals,
                     n_trials=n_trials,
                     **base_kwargs
                 )
