@@ -25,7 +25,14 @@ class SupervisedBinning:
                 max_n_bins=self.max_bins,
                 min_bin_size=self.min_bin_size,
             )
-            ob.fit(X[col].values, y.values)
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=".*force_all_finite.*",
+                    category=FutureWarning,
+                )
+                ob.fit(X[col].values, y.values)
             self.models_[col] = ob
             tbl = ob.binning_table.build()
             tbl["variable"] = col
