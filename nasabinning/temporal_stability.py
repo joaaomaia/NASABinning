@@ -1,6 +1,7 @@
 """
-temporal_stability.py
-Avalia a robustez de cada bin ao longo do tempo e a separação entre suas curvas.
+Ferramentas para avaliação da **estabilidade temporal** dos bins.
+
+O principal indicador é ``temporal_separability_score``. Ele calcula a distância média entre as curvas de event rate de cada bin ao longo das safras (mês) e permite penalizações para inversões de tendência ou baixa frequência.
 
 Funções principais
 ------------------
@@ -9,7 +10,7 @@ stability_table(df_pivot)            -> métricas por bin
 psi_over_time(df_pivot)              -> PSI entre 1ª e última safra
 ks_over_time(df_pivot)               -> KS entre 1ª e última safra
 temporal_separability_score(df, variable, bin_col, target_col, time_col)
-    -> escore médio de distância entre curvas de cada bin
+    -> escore médio de separação temporal
 """
 
 import pandas as pd
@@ -73,7 +74,13 @@ def temporal_separability_score(
     penalize_inversions: bool = False,
     penalize_low_freq: bool = False,
 ) -> float:
-    """Escore médio de distância absoluta entre curvas dos bins."""
+    """Calcula a separação temporal entre os bins.
+
+    Para cada bin é obtida a curva de event rate por safra (mês). O score é a
+    média das distâncias absolutas entre todas as combinações de curvas.
+    Opcionalmente penaliza inversões de tendência ou bins com baixa
+    contagem.
+    """
     tbl = (
         df.groupby([bin_col, time_col])[target_col]
         .agg(["sum", "count"])

@@ -10,10 +10,14 @@ Desenvolvido para facilitar a decisão de agrupamento de variáveis numéricas e
 
 O NASABinning prioriza **estabilidade temporal** das taxas de evento. A biblioteca
 utiliza o `OptimalBinning` como base única para a geração dos cortes e o
-`Optuna` apenas para otimizar seus hiperparâmetros. O objetivo principal é
-encontrar binagens que mantenham curvas de `event rate` bem separadas e
-consistentes mês a mês. Métricas clássicas como IV e KS continuam sendo
-calculadas, porém com peso secundário na seleção final dos bins.
+`Optuna` apenas para buscar seus hiperparâmetros (``max_bins``, ``min_bin_size`` etc.).
+O objetivo é encontrar binagens que mantenham curvas de `event rate` bem separadas e
+consistentes mês a mês.
+
+Para medir essa qualidade é empregada a função
+`temporal_separability_score`, que calcula a distância média entre as curvas de
+cada bin ao longo das safras. Métricas clássicas como IV e KS continuam sendo
+computadas, porém com peso secundário na seleção final dos bins.
 O score utilizado na otimização segue a fórmula:
 
 ```

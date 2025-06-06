@@ -11,7 +11,11 @@ optimize_bins(
 
 O Optuna apenas ajusta os hiperparâmetros do OptimalBinning. O score retornado
 pelo ``_objective`` prioriza a separabilidade temporal das curvas por safra,
-utilizando IV e KS como métricas auxiliares.
+computada por ``temporal_separability_score`` e ponderada com IV e KS segundo:
+
+``score = α * separabilidade + β * IV + γ * KS``
+
+onde ``α`` > ``β`` e ``γ`` (valores padrão: 0.7, 0.2 e 0.1).
 """
 from __future__ import annotations
 
