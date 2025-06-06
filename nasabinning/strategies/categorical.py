@@ -45,7 +45,14 @@ class CategoricalBinning:
         )
 
         try:
-            ob.fit(s.to_numpy(), y.to_numpy())
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=".*force_all_finite.*",
+                    category=FutureWarning,
+                )
+                ob.fit(s.to_numpy(), y.to_numpy())
             codes = ob.transform(s.to_numpy(), metric="bins")
             if len(pd.unique(codes)) < 2:
                 raise ValueError("Resultou em menos de 2 bins")

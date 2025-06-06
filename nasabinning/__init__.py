@@ -1,6 +1,6 @@
 # Init file
 """
-NASABinning: Robust credit-risk binning with auditability and temporal stability.
+NASABinning: binning auditável com foco em estabilidade e separação temporal das curvas.
 
 A biblioteca expõe a classe principal `NASABinner`.
 """
